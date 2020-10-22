@@ -19,8 +19,8 @@ def write_yolo_annotations(outpath, annotations, image_width, image_height):
             anno_fp.write('{} {} {} {} {}\n'.format(label_id, x, y, w, h))
 
 
-def get_box(obj_w, obj_h, max_x, max_y):
-    x1, y1 = np.random.randint(0, max_x, 1), np.random.randint(0, max_y, 1)
+def get_box(obj_w, obj_h, min_x, min_y, max_x, max_y):
+    x1, y1 = np.random.randint(min_x, max_x, 1), np.random.randint(min_x, max_y, 1)
     x2, y2 = x1 + obj_w, y1 + obj_h
     return [x1[0], y1[0], x2[0], y2[0]]
 
@@ -38,10 +38,11 @@ def get_group_object_positions(object_group, image_background, image_files_objec
     obj_sizes = [tuple([int(dim) for dim in obj.size]) for obj in objs]
     for w, h in obj_sizes:
         # set background image boundaries
+        min_x, min_y = 2 * w, 2 * h
         max_x, max_y = bkg_w - 2 * w, bkg_h - 2 * h
         # get new box coordinates for the obj on the bkg
         while True:
-            new_box = get_box(w, h, max_x, max_y)
+            new_box = get_box(w, h, min_x, min_y, max_x, max_y)
             for box in boxes:
                 res = intersects(box, new_box)
                 if res:

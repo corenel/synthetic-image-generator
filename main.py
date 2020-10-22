@@ -29,7 +29,7 @@ def main():
         os.makedirs(opt.output, exist_ok=True)
 
     count = 0
-    pbar = tqdm(total=len(image_files_background) * 4)
+    pbar = tqdm()
     for image_file_background in image_files_background:
         # Load the background image
         image_background = Image.open(image_file_background)
@@ -77,7 +77,7 @@ def main():
                                         image_height=image_background_height)
             count += 1
             pbar.update(1)
-    print('Done!')
+    print('\nDone!')
     pbar.close()
 
 
