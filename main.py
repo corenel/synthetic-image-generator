@@ -24,12 +24,14 @@ def main():
 
     image_files_background = glob(os.path.join(opt.backgrounds, '*.png'))
     image_files_object = glob(os.path.join(opt.objects, '*.png'))
-
     if not os.path.exists(opt.output):
         os.makedirs(opt.output, exist_ok=True)
 
     count = 0
     pbar = tqdm()
+
+    aug = util.build_augment_sequence()
+
     for image_file_background in image_files_background:
         # Load the background image
         image_background = Image.open(image_file_background)
@@ -51,9 +53,9 @@ def main():
                 # Get the obj
                 obj = Image.open(image_files_object[i])
                 # TODO do object augmentation
-                obj_w, obj_h = size
-                # Resize it as needed
-                new_obj = obj.resize((obj_w, obj_h))
+                obj_aug = aug.augment_images([np.array(obj)])[0]
+                obj_w, obj_h = obj.size
+                new_obj = Image.fromarray(obj_aug)
                 x_pos, y_pos = box[:2]
                 annotation = {
                     'coordinates': {
