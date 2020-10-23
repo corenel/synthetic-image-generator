@@ -12,6 +12,18 @@ ia.seed(1)
 
 
 def read_yolo_annotations(inpath, image_width, image_height):
+    """
+    Read annotations (in YOLO format) form file
+
+    :param inpath: filepath to annotation file
+    :type inpath: str
+    :param image_width: width of image
+    :type image_width: int
+    :param image_height: height of image
+    :type image_height: int
+    :return: parsed bounding box annotations
+    :rtype: BoundingBoxesOnImage
+    """
     with open(inpath, 'r') as fp:
         lines = fp.readlines()
     bb_list = []
@@ -31,6 +43,18 @@ def read_yolo_annotations(inpath, image_width, image_height):
 
 
 def write_yolo_annotations(outpath, annotations, image_width, image_height):
+    """
+    Write annotations into file following the YOLO format
+
+    :param outpath: filepath to save
+    :type outpath: str
+    :param annotations: annotations of bounding boxes
+    :type annotations: list
+    :param image_width: width of image
+    :type image_width: int
+    :param image_height: height of image
+    :type image_height: int
+    """
     with open(outpath, 'w') as anno_fp:
         for anno_object in annotations:
             label_id = anno_object['label']
@@ -42,18 +66,57 @@ def write_yolo_annotations(outpath, annotations, image_width, image_height):
 
 
 def get_box(obj_w, obj_h, min_x, min_y, max_x, max_y):
+    """
+    Generate a random bounding box for object to paste
+
+    :param obj_w: width of object
+    :type obj_w: int
+    :param obj_h: height of object
+    :type obj_h: int
+    :param min_x: minimum value of position x
+    :type min_x: int
+    :param min_y: minimum value of position y
+    :type min_y: int
+    :param max_x: maximum value of position x
+    :type max_x: int
+    :param max_y: maximum value of position y
+    :type max_y: int
+    :return: generated bboxes
+    :rtype: list[int]
+    """
     x1, y1 = np.random.randint(min_x, max_x, 1), np.random.randint(min_y, max_y, 1)
     x2, y2 = x1 + obj_w, y1 + obj_h
     return [x1[0], y1[0], x2[0], y2[0]]
 
 
 def intersects(box, new_box):
+    """
+    Check whether two bounding boxes are intersected
+
+    :param box: one bounding box
+    :type box: list[int]
+    :param new_box: another bounding box
+    :type new_box: list[int]
+    :return: whether two bounding boxes are intersected
+    :rtype: bool
+    """
     box_x1, box_y1, box_x2, box_y2 = box
     x1, y1, x2, y2 = new_box
     return not (box_x2 < x1 or box_x1 > x2 or box_y1 > y2 or box_y2 < y1)
 
 
 def get_group_object_positions(object_group, image_background, image_files_object):
+    """
+    Generate positions for grouped object to paste on background image
+
+    :param object_group: group of objects to appear
+    :type object_group: list[int]
+    :param image_background: background image
+    :type image_background: numpy.array
+    :param image_files_object: file lists of object images
+    :type image_files_object: list[str]
+    :return: size and bounding oxes of grouped objects
+    """
     bkg_w, bkg_h = image_background.size
     boxes = []
     objs = [Image.open(image_files_object[i]) for i in object_group]
@@ -78,16 +141,38 @@ def get_group_object_positions(object_group, image_background, image_files_objec
 
 
 def get_label_id(filename):
+    """
+    Convert filename to label index
+
+    :param filename: input object filename
+    :type filename: str
+    :return: label index
+    :rtype: int
+    """
     basename = os.path.basename(filename)
     filename = os.path.splitext(basename)[0]
     return setting.LABELS.index(filename)
 
 
 def sometimes(aug):
+    """
+    Return a shortcut for iaa.Sometimes
+
+    :param aug: augmentation method
+    :type aug: iaa.meta.Augmenter
+    :return: wrapped augmentation method
+    :rtype: iaa.meta.Augmenter
+    """
     return iaa.Sometimes(0.5, aug)
 
 
 def build_augment_sequence_for_object():
+    """
+    Build augmentation sequence for object
+
+    :return: aug for object
+    :rtype: iaa.Sequential
+    """
     return iaa.Sequential([
         # crop images by -5% to 10% of their height/width
         sometimes(iaa.CropAndPad(
@@ -144,6 +229,12 @@ def build_augment_sequence_for_object():
 
 
 def build_augment_sequence_for_background():
+    """
+    Build augmentation sequence for background
+
+    :return: aug for background
+    :rtype: iaa.Sequential
+    """
     return iaa.Sequential([
         # crop images by -5% to 10% of their height/width
         sometimes(iaa.CropAndPad(
