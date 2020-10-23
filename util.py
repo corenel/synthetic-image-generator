@@ -4,10 +4,30 @@ import imgaug as ia
 import numpy as np
 from PIL import Image
 from imgaug import augmenters as iaa
+from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
 
 import setting
 
 ia.seed(1)
+
+
+def read_yolo_annotations(inpath, image_width, image_height):
+    with open(inpath, 'r') as fp:
+        lines = fp.readlines()
+    bb_list = []
+    for line in lines:
+        items = line.split(' ')
+        if len(items) < 5:
+            print('Invalid anno line: {}'.format(line))
+        label_id, x, y, w, h = items
+        x = float(x) * image_width
+        y = float(y) * image_height
+        w = float(w) * image_width
+        h = float(h) * image_height
+        label_id = int(label_id)
+        bb_list.append(BoundingBox(x1=x - w / 2, y1=y - h / 2, x2=x + w / 2, y2=y + w / 2, label=label_id))
+    bbs = BoundingBoxesOnImage(bounding_boxes=bb_list, shape=(image_height, image_width))
+    return bbs
 
 
 def write_yolo_annotations(outpath, annotations, image_width, image_height):

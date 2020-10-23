@@ -48,8 +48,24 @@ def main():
             obj_sizes, boxes = util.get_group_object_positions(object_group, image_background, image_files_object)
 
             bkg_w_obj = image_background.copy()
-            bkg_w_obj_aug = Image.fromarray(aug_background.augment_images([np.array(bkg_w_obj)])[0])
+            bkg_boxes = util.read_yolo_annotations(image_file_background.replace('.png', '.txt'),
+                                                   image_width=bkg_w_obj.size[0],
+                                                   image_height=bkg_w_obj.size[1])
+
+            bkg_w_obj_aug, bkg_boxes_aug = aug_background(image=np.array(bkg_w_obj), bounding_boxes=bkg_boxes)
+            bkg_w_obj_aug = Image.fromarray(bkg_w_obj_aug)
             image_background_width, image_background_height = bkg_w_obj_aug.size
+
+            for bkg_box_aug in bkg_boxes_aug.remove_out_of_image().clip_out_of_image().bounding_boxes:
+                group_annotation.append({
+                    'coordinates': {
+                        'height': bkg_box_aug.y2 - bkg_box_aug.y1,
+                        'width': bkg_box_aug.x2 - bkg_box_aug.x1,
+                        'x': int((bkg_box_aug.x2 + bkg_box_aug.x1) / 2),
+                        'y': int((bkg_box_aug.y2 + bkg_box_aug.y1) / 2)
+                    },
+                    'label': bkg_box_aug.label
+                })
 
             # For each obj in the group
             for i, size, box in zip(object_group, obj_sizes, boxes):
