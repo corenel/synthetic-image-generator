@@ -1,10 +1,11 @@
-import imgaug as ia
-from imgaug import augmenters as iaa
 import os
-import numpy as np
-import setting
 
+import imgaug as ia
+import numpy as np
 from PIL import Image
+from imgaug import augmenters as iaa
+
+import setting
 
 ia.seed(1)
 
@@ -21,7 +22,7 @@ def write_yolo_annotations(outpath, annotations, image_width, image_height):
 
 
 def get_box(obj_w, obj_h, min_x, min_y, max_x, max_y):
-    x1, y1 = np.random.randint(min_x, max_x, 1), np.random.randint(min_x, max_y, 1)
+    x1, y1 = np.random.randint(min_x, max_x, 1), np.random.randint(min_y, max_y, 1)
     x2, y2 = x1 + obj_w, y1 + obj_h
     return [x1[0], y1[0], x2[0], y2[0]]
 
@@ -36,7 +37,7 @@ def get_group_object_positions(object_group, image_background, image_files_objec
     bkg_w, bkg_h = image_background.size
     boxes = []
     objs = [Image.open(image_files_object[i]) for i in object_group]
-    obj_sizes = [tuple([int(dim) for dim in obj.size]) for obj in objs]
+    obj_sizes = [tuple([int(setting.OBJECT_SCALE_FACTOR * dim) for dim in obj.size]) for obj in objs]
     for w, h in obj_sizes:
         # set background image boundaries
         min_x, min_y = 2 * w, 2 * h
@@ -62,9 +63,11 @@ def get_label_id(filename):
     return setting.LABELS.index(filename)
 
 
-def build_augment_sequence():
-    def sometimes(aug): return iaa.Sometimes(0.5, aug)
+def sometimes(aug):
+    return iaa.Sometimes(0.5, aug)
 
+
+def build_augment_sequence_for_object():
     return iaa.Sequential([
         # crop images by -5% to 10% of their height/width
         sometimes(iaa.CropAndPad(
@@ -85,7 +88,7 @@ def build_augment_sequence():
         )),
         # execute 0 to 5 of the following (less important) augmenters per image
         # don't execute all of them, as that would often be way too strong
-        iaa.SomeOf((0, 5),
+        iaa.SomeOf((0, 3),
                    [
                        iaa.OneOf([
                            # blur images with a sigma between 0 and 3.0
@@ -107,12 +110,6 @@ def build_augment_sequence():
                        # add gaussian noise to images
                        iaa.AdditiveGaussianNoise(loc=0, scale=(
                            0.0, 0.05 * 255), per_channel=0.5),
-                       iaa.OneOf([
-                           # randomly remove up to 10% of the pixels
-                           iaa.Dropout((0.01, 0.05), per_channel=0.5),
-                           iaa.CoarseDropout((0.03, 0.05), size_percent=(
-                               0.02, 0.05), per_channel=0.2),
-                       ]),
                        # change brightness of images (by -10 to 10 of original value)
                        iaa.Add((-10, 10), per_channel=0.5),
                    ]),
@@ -122,5 +119,57 @@ def build_augment_sequence():
         # sometimes move parts of the image around
         sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
         sometimes(iaa.PerspectiveTransform(scale=(0.01, 0.1), keep_size=False))
+    ],
+        random_order=True)
+
+
+def build_augment_sequence_for_background():
+    return iaa.Sequential([
+        # crop images by -5% to 10% of their height/width
+        sometimes(iaa.CropAndPad(
+            percent=(-0.05, 0.1),
+            pad_mode=ia.ALL,
+            pad_cval=(0, 255)
+        )),
+        sometimes(iaa.Affine(
+            # scale images to 80-120% of their size, individually per axis
+            scale={'x': (0.8, 1.2), 'y': (0.8, 1.2)},
+            # translate by -20 to +20 percent (per axis)
+            translate_percent={'x': (-0.05, 0.05), 'y': (-0.05, 0.05)},
+            rotate=(-10, 10),  # rotate by -45 to +45 degrees
+            # use nearest neighbour or bilinear interpolation (fast)
+            order=[0, 1],
+            # if mode is constant, use a cval between 0 and 255
+            cval=(0, 255),
+            # use any of scikit-image's warping modes (see 2nd image from the top for examples)
+            mode=ia.ALL
+        )),
+        # execute 0 to 5 of the following (less important) augmenters per image
+        # don't execute all of them, as that would often be way too strong
+        iaa.SomeOf((0, 3),
+                   [
+                       iaa.OneOf([
+                           # blur images with a sigma between 0 and 3.0
+                           iaa.GaussianBlur((0, 3.0)),
+                           # blur image using local means with kernel sizes between 2 and 7
+                           iaa.AverageBlur(k=(2, 7)),
+                           # blur image using local medians with kernel sizes between 2 and 7
+                           iaa.MedianBlur(k=(3, 11)),
+                       ]),
+                       iaa.Sharpen(alpha=(0, 1.0), lightness=(
+                           0.75, 1.5)),  # sharpen images
+                       # add gaussian noise to images
+                       iaa.AdditiveGaussianNoise(loc=0, scale=(
+                           0.0, 0.05 * 255), per_channel=0.5),
+                       iaa.OneOf([
+                           # randomly remove up to 10% of the pixels
+                           iaa.Dropout((0.01, 0.015), per_channel=0.1),
+                           iaa.CoarseDropout((0.01, 0.015), size_percent=(
+                               0.02, 0.05), per_channel=0.1),
+                       ]),
+                       # change brightness of images (by -10 to 10 of original value)
+                       iaa.Add((-10, 10), per_channel=0.5),
+                   ]),
+        sometimes(iaa.PerspectiveTransform(scale=(0.01, 0.03), keep_size=False))
     ],
         random_order=True)

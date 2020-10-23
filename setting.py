@@ -18,3 +18,4 @@ LABELS = [
 ]
 
 IMAGE_EXTENSIONS = ['.jpg', '.png']
+OBJECT_SCALE_FACTOR = 0.1
