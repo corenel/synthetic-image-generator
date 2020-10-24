@@ -17,6 +17,6 @@ LABELS = [
     'symbol_triangle',
 ]
 
-OBJECT_SCALE_FACTOR = 0.1
+OBJECT_SCALE_FACTOR = 0.05
 BATCH_SIZE = 16
 NUM_EPOCHS = 100

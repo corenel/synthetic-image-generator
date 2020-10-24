@@ -112,8 +112,7 @@ def intersects(box, new_box):
     return not (box_x2 < x1 or box_x1 > x2 or box_y1 > y2 or box_y2 < y1)
 
 
-def get_group_object_positions(object_group, image_background,
-                               dataset_object):
+def get_group_object_positions(object_group, image_background, dataset_object):
     """
     Generate positions for grouped object to paste on background image
 
@@ -129,14 +128,17 @@ def get_group_object_positions(object_group, image_background,
     boxes = []
     objs = []
     labels = []
+    obj_sizes = []
     for i in object_group:
         obj, label = dataset_object[i]
         objs.append(obj)
         labels.append(label)
-    obj_sizes = [
-        tuple([int(setting.OBJECT_SCALE_FACTOR * dim) for dim in obj.size])
-        for obj in objs
-    ]
+        factor = min([
+            (setting.OBJECT_SCALE_FACTOR * image_background.size[dim]) /
+            obj.size[dim] for dim in range(len(obj.size))
+        ])
+        obj_sizes.append(
+            tuple(int(obj.size[dim] * factor) for dim in range(len(obj.size))))
 
     for w, h in obj_sizes:
         # set background image boundaries
