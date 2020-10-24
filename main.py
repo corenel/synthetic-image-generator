@@ -1,14 +1,14 @@
 import argparse
 import os
-from glob import glob
 
 import numpy as np
 from PIL import Image
+from imgaug.augmentables.bbs import BoundingBoxesOnImage
 from tqdm import tqdm
 
-import util
 import dataset
 import setting
+import util
 
 
 def parse_args():
@@ -43,7 +43,7 @@ def main():
 
     # initialize augmentation functions
     aug_object = util.build_augment_sequence_for_object()
-    aug_background = util.build_augment_sequence_for_background()
+    aug_image = util.build_augment_sequence_for_background()
 
     # start generating synthetic images
     count = 0
@@ -54,7 +54,8 @@ def main():
         background_idx = np.random.randint(low=0,
                                            high=len(dataset_background),
                                            size=1)[0]
-        image_background, anno_background = dataset_background[background_idx]
+        image_background, bboxes_background = dataset_background[
+            background_idx]
 
         # group 2-4 objects together on a single background
         object_groups = [
@@ -67,26 +68,10 @@ def main():
 
         for object_group in object_groups:
             # get image and bboxes of background
-            bkg_w_obj = image_background.copy()
-            # augment image and bboxes of background
-            bkg_w_obj_aug, bkg_boxes_aug = aug_background(
-                image=np.array(bkg_w_obj), bounding_boxes=anno_background)
-            bkg_w_obj_aug = Image.fromarray(bkg_w_obj_aug)
-            image_background_width, image_background_height = bkg_w_obj_aug.size
+            image_result = image_background.copy()
 
             # prepare initial annotations
-            group_annotation = []
-            for bkg_box_aug in bkg_boxes_aug.remove_out_of_image(
-            ).clip_out_of_image().bounding_boxes:
-                group_annotation.append({
-                    'coordinates': {
-                        'height': bkg_box_aug.y2 - bkg_box_aug.y1,
-                        'width': bkg_box_aug.x2 - bkg_box_aug.x1,
-                        'x': int((bkg_box_aug.x2 + bkg_box_aug.x1) / 2),
-                        'y': int((bkg_box_aug.y2 + bkg_box_aug.y1) / 2)
-                    },
-                    'label': bkg_box_aug.label
-                })
+            bbox_list = [bbox for bbox in bboxes_background.bounding_boxes]
 
             # get sizes and positions
             objs, labels, obj_sizes, boxes = util.get_group_object_positions(
@@ -95,7 +80,7 @@ def main():
             # process each objext in the group
             for i, obj, label, size, box in zip(object_group, objs, labels,
                                                 obj_sizes, boxes):
-                # read the object image
+                # resize the object
                 obj_w, obj_h = size
                 obj = obj.resize((obj_w, obj_h))
                 # augment this object
@@ -104,28 +89,31 @@ def main():
                 # generate annotation for this object
                 obj_w, obj_h = obj_aug.size
                 x_pos, y_pos = box[:2]
-                annotation = {
-                    'coordinates': {
-                        'height': obj_h,
-                        'width': obj_w,
-                        'x': int(x_pos + (0.5 * obj_w)),
-                        'y': int(y_pos + (0.5 * obj_h))
-                    },
-                    'label': label
-                }
-                group_annotation.append(annotation)
+                x = int(x_pos + (0.5 * obj_w))
+                y = int(y_pos + (0.5 * obj_h))
+                bbox_list.append(util.xywh_to_bbox(label, x, y, obj_w, obj_h))
                 # paste the obj to the background
-                bkg_w_obj_aug.paste(obj_aug, (x_pos, y_pos))
+                image_result.paste(obj_aug, (x_pos, y_pos))
+
+            # augment image and bboxes of image
+            annotations = BoundingBoxesOnImage(bounding_boxes=bbox_list,
+                                               shape=(image_result.height,
+                                                      image_result.width))
+            image_result_aug, annotations_aug = aug_image(
+                image=np.array(image_result), bounding_boxes=annotations)
+            image_result_aug = Image.fromarray(image_result_aug)
 
             # save result
-            output_fp = os.path.join(opt.output, '{:05d}.png'.format(count))
-            bkg_w_obj_aug.save(fp=output_fp, format="png")
+            output_path_image = os.path.join(opt.output,
+                                             '{:05d}.png'.format(count))
+            image_result_aug.save(fp=output_path_image, format="png")
             # save annotation data
-            anno_fp = os.path.join(opt.output, '{:05d}.txt'.format(count))
-            util.write_yolo_annotations(outpath=anno_fp,
-                                        annotations=group_annotation,
-                                        image_width=image_background_width,
-                                        image_height=image_background_height)
+            output_path_anno = os.path.join(opt.output,
+                                            '{:05d}.txt'.format(count))
+            util.write_yolo_annotations(outpath=output_path_anno,
+                                        annotations=annotations_aug,
+                                        image_width=image_result_aug.width,
+                                        image_height=image_result_aug.height)
             count += 1
             pbar.update(1)
     print('\nDone!')

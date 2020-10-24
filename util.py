@@ -2,13 +2,20 @@ import os
 
 import imgaug as ia
 import numpy as np
-from PIL import Image
 from imgaug import augmenters as iaa
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
 
 import setting
 
 ia.seed(1)
+
+
+def xywh_to_bbox(label, x, y, w, h):
+    return BoundingBox(x1=x - w / 2,
+                       y1=y - h / 2,
+                       x2=x + w / 2,
+                       y2=y + h / 2,
+                       label=label)
 
 
 def read_yolo_annotations(inpath, image_width, image_height):
@@ -31,18 +38,13 @@ def read_yolo_annotations(inpath, image_width, image_height):
         items = line.split(' ')
         if len(items) < 5:
             print('Invalid anno line: {}'.format(line))
-        label_id, x, y, w, h = items
+        label, x, y, w, h = items
         x = float(x) * image_width
         y = float(y) * image_height
         w = float(w) * image_width
         h = float(h) * image_height
-        label_id = int(label_id)
-        bb_list.append(
-            BoundingBox(x1=x - w / 2,
-                        y1=y - h / 2,
-                        x2=x + w / 2,
-                        y2=y + w / 2,
-                        label=label_id))
+        label = int(label)
+        bb_list.append(xywh_to_bbox(label, x, y, w, h))
     bbs = BoundingBoxesOnImage(bounding_boxes=bb_list,
                                shape=(image_height, image_width))
     return bbs
@@ -55,20 +57,20 @@ def write_yolo_annotations(outpath, annotations, image_width, image_height):
     :param outpath: filepath to save
     :type outpath: str
     :param annotations: annotations of bounding boxes
-    :type annotations: list
+    :type annotations: BoundingBoxesOnImage
     :param image_width: width of image
     :type image_width: int
     :param image_height: height of image
     :type image_height: int
     """
-    with open(outpath, 'w') as anno_fp:
-        for anno_object in annotations:
-            label_id = anno_object['label']
-            x = anno_object['coordinates']['x'] / image_width
-            y = anno_object['coordinates']['y'] / image_height
-            w = anno_object['coordinates']['width'] / image_width
-            h = anno_object['coordinates']['height'] / image_height
-            anno_fp.write('{} {} {} {} {}\n'.format(label_id, x, y, w, h))
+    with open(outpath, 'w') as f:
+        for anno in annotations.remove_out_of_image().clip_out_of_image():
+            label = anno.label
+            x = anno.center_x / image_width
+            y = anno.center_y / image_height
+            w = anno.width / image_width
+            h = anno.height / image_height
+            f.write('{} {} {} {} {}\n'.format(label, x, y, w, h))
 
 
 def get_box(obj_w, obj_h, min_x, min_y, max_x, max_y):
@@ -227,13 +229,6 @@ def build_augment_sequence_for_object():
                     ]),
                     iaa.Sharpen(alpha=(0, 1.0),
                                 lightness=(0.75, 1.5)),  # sharpen images
-                    # search either for all edges or for directed edges,
-                    # blend the result with the original image using a blobby mask
-                    # iaa.SimplexNoiseAlpha(iaa.OneOf([
-                    #     iaa.EdgeDetect(alpha=(0.5, 1.0)),
-                    #     iaa.DirectedEdgeDetect(
-                    #         alpha=(0.5, 1.0), direction=(0.0, 1.0)),
-                    # ])),
                     # add gaussian noise to images
                     iaa.AdditiveGaussianNoise(
                         loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
@@ -245,7 +240,7 @@ def build_augment_sequence_for_object():
             # sometimes move parts of the image around
             sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
             sometimes(
-                iaa.PerspectiveTransform(scale=(0.01, 0.1), keep_size=False))
+                iaa.PerspectiveTransform(scale=(0.02, 0.1), keep_size=False))
         ],
         random_order=True)
 
@@ -261,21 +256,22 @@ def build_augment_sequence_for_background():
         [
             # crop images by -5% to 10% of their height/width
             sometimes(
-                iaa.CropAndPad(
-                    percent=(-0.05, 0.1), pad_mode=ia.ALL, pad_cval=(0, 255))),
+                iaa.CropAndPad(percent=(-0.05, 0.075),
+                               pad_mode=ia.ALL,
+                               pad_cval=(0, 255))),
             sometimes(
                 iaa.Affine(
                     # scale images to 80-120% of their size, individually per axis
                     scale={
-                        'x': (0.8, 1.2),
-                        'y': (0.8, 1.2)
+                        'x': (0.9, 1.1),
+                        'y': (0.9, 1.1)
                     },
                     # translate by -20 to +20 percent (per axis)
                     translate_percent={
-                        'x': (-0.05, 0.05),
-                        'y': (-0.05, 0.05)
+                        'x': (-0.03, 0.03),
+                        'y': (-0.03, 0.03)
                     },
-                    rotate=(-10, 10),  # rotate by -45 to +45 degrees
+                    rotate=(-5, 5),  # rotate by -45 to +45 degrees
                     # use nearest neighbour or bilinear interpolation (fast)
                     order=[0, 1],
                     # if mode is constant, use a cval between 0 and 255
@@ -304,13 +300,12 @@ def build_augment_sequence_for_background():
                         # randomly remove up to 10% of the pixels
                         iaa.Dropout((0.01, 0.015), per_channel=0.1),
                         iaa.CoarseDropout((0.01, 0.015),
-                                          size_percent=(0.02, 0.05),
+                                          size_percent=(0.01, 0.015),
                                           per_channel=0.1),
                     ]),
                     # change brightness of images (by -10 to 10 of original value)
                     iaa.Add((-10, 10), per_channel=0.5),
                 ]),
-            sometimes(
-                iaa.PerspectiveTransform(scale=(0.01, 0.03), keep_size=False))
+            iaa.PerspectiveTransform(scale=(0.02, 0.05), keep_size=False)
         ],
         random_order=True)

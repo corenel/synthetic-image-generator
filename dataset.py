@@ -1,8 +1,9 @@
-from PIL import Image
 import os
 
-from util import read_yolo_annotations
+from PIL import Image
+
 import setting
+from util import read_yolo_annotations
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif',
                   '.tiff', '.webp')
