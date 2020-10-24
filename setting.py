@@ -17,5 +17,6 @@ LABELS = [
     'symbol_triangle',
 ]
 
-IMAGE_EXTENSIONS = ['.jpg', '.png']
 OBJECT_SCALE_FACTOR = 0.1
+BATCH_SIZE = 16
+NUM_EPOCHS = 100

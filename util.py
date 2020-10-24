@@ -37,8 +37,14 @@ def read_yolo_annotations(inpath, image_width, image_height):
         w = float(w) * image_width
         h = float(h) * image_height
         label_id = int(label_id)
-        bb_list.append(BoundingBox(x1=x - w / 2, y1=y - h / 2, x2=x + w / 2, y2=y + w / 2, label=label_id))
-    bbs = BoundingBoxesOnImage(bounding_boxes=bb_list, shape=(image_height, image_width))
+        bb_list.append(
+            BoundingBox(x1=x - w / 2,
+                        y1=y - h / 2,
+                        x2=x + w / 2,
+                        y2=y + w / 2,
+                        label=label_id))
+    bbs = BoundingBoxesOnImage(bounding_boxes=bb_list,
+                               shape=(image_height, image_width))
     return bbs
 
 
@@ -84,7 +90,8 @@ def get_box(obj_w, obj_h, min_x, min_y, max_x, max_y):
     :return: generated bboxes
     :rtype: list[int]
     """
-    x1, y1 = np.random.randint(min_x, max_x, 1), np.random.randint(min_y, max_y, 1)
+    x1, y1 = np.random.randint(min_x, max_x,
+                               1), np.random.randint(min_y, max_y, 1)
     x2, y2 = x1 + obj_w, y1 + obj_h
     return [x1[0], y1[0], x2[0], y2[0]]
 
@@ -105,7 +112,8 @@ def intersects(box, new_box):
     return not (box_x2 < x1 or box_x1 > x2 or box_y1 > y2 or box_y2 < y1)
 
 
-def get_group_object_positions(object_group, image_background, image_files_object):
+def get_group_object_positions(object_group, image_background,
+                               dataset_object):
     """
     Generate positions for grouped object to paste on background image
 
@@ -113,14 +121,23 @@ def get_group_object_positions(object_group, image_background, image_files_objec
     :type object_group: list[int]
     :param image_background: background image
     :type image_background: numpy.array
-    :param image_files_object: file lists of object images
-    :type image_files_object: list[str]
+    :param dataset_object: dataset of object images
+    :type dataset_object: dataset.ObjectImageFolderDataset
     :return: size and bounding oxes of grouped objects
     """
     bkg_w, bkg_h = image_background.size
     boxes = []
-    objs = [Image.open(image_files_object[i]) for i in object_group]
-    obj_sizes = [tuple([int(setting.OBJECT_SCALE_FACTOR * dim) for dim in obj.size]) for obj in objs]
+    objs = []
+    labels = []
+    for i in object_group:
+        obj, label = dataset_object[i]
+        objs.append(obj)
+        labels.append(label)
+    obj_sizes = [
+        tuple([int(setting.OBJECT_SCALE_FACTOR * dim) for dim in obj.size])
+        for obj in objs
+    ]
+
     for w, h in obj_sizes:
         # set background image boundaries
         min_x, min_y = 2 * w, 2 * h
@@ -137,7 +154,7 @@ def get_group_object_positions(object_group, image_background, image_files_objec
             continue  # only executed if the inner loop DID break
         # append our new box
         boxes.append(new_box)
-    return obj_sizes, boxes
+    return objs, labels, obj_sizes, boxes
 
 
 def get_label_id(filename):
@@ -173,58 +190,61 @@ def build_augment_sequence_for_object():
     :return: aug for object
     :rtype: iaa.Sequential
     """
-    return iaa.Sequential([
-        # crop images by -5% to 10% of their height/width
-        sometimes(iaa.CropAndPad(
-            percent=(-0.05, 0.1),
-            pad_mode=ia.ALL,
-            pad_cval=(0, 255)
-        )),
-        sometimes(iaa.Affine(
-            # scale images to 80-120% of their size, individually per axis
-            scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)},
-            rotate=(-5, 5),  # rotate by -45 to +45 degrees
-            # use nearest neighbour or bilinear interpolation (fast)
-            order=[0, 1],
-            # if mode is constant, use a cval between 0 and 255
-            cval=(0, 255),
-            # use any of scikit-image's warping modes (see 2nd image from the top for examples)
-            mode=ia.ALL
-        )),
-        # execute 0 to 5 of the following (less important) augmenters per image
-        # don't execute all of them, as that would often be way too strong
-        iaa.SomeOf((0, 3),
-                   [
-                       iaa.OneOf([
-                           # blur images with a sigma between 0 and 3.0
-                           iaa.GaussianBlur((0, 1.0)),
-                           # blur image using local means with kernel sizes between 2 and 7
-                           iaa.AverageBlur(k=(2, 5)),
-                           # blur image using local medians with kernel sizes between 2 and 7
-                           iaa.MedianBlur(k=(3, 7)),
-                       ]),
-                       iaa.Sharpen(alpha=(0, 1.0), lightness=(
-                           0.75, 1.5)),  # sharpen images
-                       # search either for all edges or for directed edges,
-                       # blend the result with the original image using a blobby mask
-                       # iaa.SimplexNoiseAlpha(iaa.OneOf([
-                       #     iaa.EdgeDetect(alpha=(0.5, 1.0)),
-                       #     iaa.DirectedEdgeDetect(
-                       #         alpha=(0.5, 1.0), direction=(0.0, 1.0)),
-                       # ])),
-                       # add gaussian noise to images
-                       iaa.AdditiveGaussianNoise(loc=0, scale=(
-                           0.0, 0.05 * 255), per_channel=0.5),
-                       # change brightness of images (by -10 to 10 of original value)
-                       iaa.Add((-10, 10), per_channel=0.5),
-                   ]),
-        # move pixels locally around (with random strengths)
-        sometimes(iaa.ElasticTransformation(
-            alpha=(0.5, 3.5), sigma=0.25)),
-        # sometimes move parts of the image around
-        sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
-        sometimes(iaa.PerspectiveTransform(scale=(0.01, 0.1), keep_size=False))
-    ],
+    return iaa.Sequential(
+        [
+            # crop images by -5% to 10% of their height/width
+            sometimes(
+                iaa.CropAndPad(
+                    percent=(-0.05, 0.1), pad_mode=ia.ALL, pad_cval=(0, 255))),
+            sometimes(
+                iaa.Affine(
+                    # scale images to 80-120% of their size, individually per axis
+                    scale={
+                        'x': (0.9, 1.1),
+                        'y': (0.9, 1.1)
+                    },
+                    rotate=(-5, 5),  # rotate by -45 to +45 degrees
+                    # use nearest neighbour or bilinear interpolation (fast)
+                    order=[0, 1],
+                    # if mode is constant, use a cval between 0 and 255
+                    cval=(0, 255),
+                    # use any of scikit-image's warping modes (see 2nd image from the top for examples)
+                    mode=ia.ALL)),
+            # execute 0 to 5 of the following (less important) augmenters per image
+            # don't execute all of them, as that would often be way too strong
+            iaa.SomeOf(
+                (0, 3),
+                [
+                    iaa.OneOf([
+                        # blur images with a sigma between 0 and 3.0
+                        iaa.GaussianBlur((0, 1.0)),
+                        # blur image using local means with kernel sizes between 2 and 7
+                        iaa.AverageBlur(k=(2, 5)),
+                        # blur image using local medians with kernel sizes between 2 and 7
+                        iaa.MedianBlur(k=(3, 7)),
+                    ]),
+                    iaa.Sharpen(alpha=(0, 1.0),
+                                lightness=(0.75, 1.5)),  # sharpen images
+                    # search either for all edges or for directed edges,
+                    # blend the result with the original image using a blobby mask
+                    # iaa.SimplexNoiseAlpha(iaa.OneOf([
+                    #     iaa.EdgeDetect(alpha=(0.5, 1.0)),
+                    #     iaa.DirectedEdgeDetect(
+                    #         alpha=(0.5, 1.0), direction=(0.0, 1.0)),
+                    # ])),
+                    # add gaussian noise to images
+                    iaa.AdditiveGaussianNoise(
+                        loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
+                    # change brightness of images (by -10 to 10 of original value)
+                    iaa.Add((-10, 10), per_channel=0.5),
+                ]),
+            # move pixels locally around (with random strengths)
+            sometimes(iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)),
+            # sometimes move parts of the image around
+            sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
+            sometimes(
+                iaa.PerspectiveTransform(scale=(0.01, 0.1), keep_size=False))
+        ],
         random_order=True)
 
 
@@ -235,52 +255,60 @@ def build_augment_sequence_for_background():
     :return: aug for background
     :rtype: iaa.Sequential
     """
-    return iaa.Sequential([
-        # crop images by -5% to 10% of their height/width
-        sometimes(iaa.CropAndPad(
-            percent=(-0.05, 0.1),
-            pad_mode=ia.ALL,
-            pad_cval=(0, 255)
-        )),
-        sometimes(iaa.Affine(
-            # scale images to 80-120% of their size, individually per axis
-            scale={'x': (0.8, 1.2), 'y': (0.8, 1.2)},
-            # translate by -20 to +20 percent (per axis)
-            translate_percent={'x': (-0.05, 0.05), 'y': (-0.05, 0.05)},
-            rotate=(-10, 10),  # rotate by -45 to +45 degrees
-            # use nearest neighbour or bilinear interpolation (fast)
-            order=[0, 1],
-            # if mode is constant, use a cval between 0 and 255
-            cval=(0, 255),
-            # use any of scikit-image's warping modes (see 2nd image from the top for examples)
-            mode=ia.ALL
-        )),
-        # execute 0 to 5 of the following (less important) augmenters per image
-        # don't execute all of them, as that would often be way too strong
-        iaa.SomeOf((0, 3),
-                   [
-                       iaa.OneOf([
-                           # blur images with a sigma between 0 and 3.0
-                           iaa.GaussianBlur((0, 3.0)),
-                           # blur image using local means with kernel sizes between 2 and 7
-                           iaa.AverageBlur(k=(2, 7)),
-                           # blur image using local medians with kernel sizes between 2 and 7
-                           iaa.MedianBlur(k=(3, 11)),
-                       ]),
-                       iaa.Sharpen(alpha=(0, 1.0), lightness=(
-                           0.75, 1.5)),  # sharpen images
-                       # add gaussian noise to images
-                       iaa.AdditiveGaussianNoise(loc=0, scale=(
-                           0.0, 0.05 * 255), per_channel=0.5),
-                       iaa.OneOf([
-                           # randomly remove up to 10% of the pixels
-                           iaa.Dropout((0.01, 0.015), per_channel=0.1),
-                           iaa.CoarseDropout((0.01, 0.015), size_percent=(
-                               0.02, 0.05), per_channel=0.1),
-                       ]),
-                       # change brightness of images (by -10 to 10 of original value)
-                       iaa.Add((-10, 10), per_channel=0.5),
-                   ]),
-        sometimes(iaa.PerspectiveTransform(scale=(0.01, 0.03), keep_size=False))
-    ],
+    return iaa.Sequential(
+        [
+            # crop images by -5% to 10% of their height/width
+            sometimes(
+                iaa.CropAndPad(
+                    percent=(-0.05, 0.1), pad_mode=ia.ALL, pad_cval=(0, 255))),
+            sometimes(
+                iaa.Affine(
+                    # scale images to 80-120% of their size, individually per axis
+                    scale={
+                        'x': (0.8, 1.2),
+                        'y': (0.8, 1.2)
+                    },
+                    # translate by -20 to +20 percent (per axis)
+                    translate_percent={
+                        'x': (-0.05, 0.05),
+                        'y': (-0.05, 0.05)
+                    },
+                    rotate=(-10, 10),  # rotate by -45 to +45 degrees
+                    # use nearest neighbour or bilinear interpolation (fast)
+                    order=[0, 1],
+                    # if mode is constant, use a cval between 0 and 255
+                    cval=(0, 255),
+                    # use any of scikit-image's warping modes (see 2nd image from the top for examples)
+                    mode=ia.ALL)),
+            # execute 0 to 5 of the following (less important) augmenters per image
+            # don't execute all of them, as that would often be way too strong
+            iaa.SomeOf(
+                (0, 3),
+                [
+                    iaa.OneOf([
+                        # blur images with a sigma between 0 and 3.0
+                        iaa.GaussianBlur((0, 3.0)),
+                        # blur image using local means with kernel sizes between 2 and 7
+                        iaa.AverageBlur(k=(2, 7)),
+                        # blur image using local medians with kernel sizes between 2 and 7
+                        iaa.MedianBlur(k=(3, 11)),
+                    ]),
+                    iaa.Sharpen(alpha=(0, 1.0),
+                                lightness=(0.75, 1.5)),  # sharpen images
+                    # add gaussian noise to images
+                    iaa.AdditiveGaussianNoise(
+                        loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
+                    iaa.OneOf([
+                        # randomly remove up to 10% of the pixels
+                        iaa.Dropout((0.01, 0.015), per_channel=0.1),
+                        iaa.CoarseDropout((0.01, 0.015),
+                                          size_percent=(0.02, 0.05),
+                                          per_channel=0.1),
+                    ]),
+                    # change brightness of images (by -10 to 10 of original value)
+                    iaa.Add((-10, 10), per_channel=0.5),
+                ]),
+            sometimes(
+                iaa.PerspectiveTransform(scale=(0.01, 0.03), keep_size=False))
+        ],
         random_order=True)
