@@ -230,8 +230,8 @@ def build_augment_sequence_for_object():
                     iaa.Sharpen(alpha=(0, 1.0),
                                 lightness=(0.75, 1.5)),  # sharpen images
                     iaa.AdditiveGaussianNoise(
-                        loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
-                    iaa.Add((-10, 10), per_channel=0.5),
+                        loc=0, scale=(0.0, 0.01 * 255), per_channel=0.5),
+                    iaa.Add((-3, 3), per_channel=0.5),
                 ]),
             sometimes(iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)),
             sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
