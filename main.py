@@ -83,6 +83,7 @@ def main():
                 # resize the object
                 obj_w, obj_h = size
                 obj = obj.resize((obj_w, obj_h))
+                obj = util.resize_image(obj)
                 # augment this object
                 obj_aug = Image.fromarray(
                     aug_object.augment_images([np.array(obj)])[0])

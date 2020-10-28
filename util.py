@@ -4,6 +4,7 @@ import imgaug as ia
 import numpy as np
 from imgaug import augmenters as iaa
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
+from PIL import Image
 
 import setting
 
@@ -136,7 +137,7 @@ def get_group_object_positions(object_group, image_background, dataset_object):
         objs.append(obj)
         labels.append(label)
         factor = min([
-            (setting.OBJECT_SCALE_FACTOR * image_background.size[dim]) /
+            (setting.OBJECT_INIT_SCALE_FACTOR * image_background.size[dim]) /
             obj.size[dim] for dim in range(len(obj.size))
         ])
         obj_sizes.append(
@@ -159,6 +160,20 @@ def get_group_object_positions(object_group, image_background, dataset_object):
         # append our new box
         boxes.append(new_box)
     return objs, labels, obj_sizes, boxes
+
+
+def resize_image(image):
+    """
+    Resize image by random scale factor
+    """
+    resize_rate = np.random.choice(
+        setting.OBJECT_AUG_SCALE_FACTOR) + np.random.uniform(low=-0.1,
+                                                             high=0.1)
+    image = image.resize(
+        [int(image.width * resize_rate),
+         int(image.height * resize_rate)], Image.BILINEAR)
+
+    return image
 
 
 def get_label_id(filename):
@@ -196,51 +211,31 @@ def build_augment_sequence_for_object():
     """
     return iaa.Sequential(
         [
-            # crop images by -5% to 10% of their height/width
-            sometimes(
-                iaa.CropAndPad(
-                    percent=(-0.05, 0.1), pad_mode=ia.ALL, pad_cval=(0, 255))),
-            sometimes(
-                iaa.Affine(
-                    # scale images to 80-120% of their size, individually per axis
-                    scale={
-                        'x': (0.9, 1.1),
-                        'y': (0.9, 1.1)
-                    },
-                    rotate=(-5, 5),  # rotate by -45 to +45 degrees
-                    # use nearest neighbour or bilinear interpolation (fast)
-                    order=[0, 1],
-                    # if mode is constant, use a cval between 0 and 255
-                    cval=(0, 255),
-                    # use any of scikit-image's warping modes (see 2nd image from the top for examples)
-                    mode=ia.ALL)),
-            # execute 0 to 5 of the following (less important) augmenters per image
-            # don't execute all of them, as that would often be way too strong
+            iaa.Affine(scale={
+                'x': (0.9, 1.1),
+                'y': (0.9, 1.1)
+            },
+                       rotate=(-5, 5),
+                       order=[0, 1],
+                       cval=(0, 255),
+                       mode=ia.ALL),
             iaa.SomeOf(
-                (0, 3),
+                (0, 2),
                 [
                     iaa.OneOf([
-                        # blur images with a sigma between 0 and 3.0
                         iaa.GaussianBlur((0, 1.0)),
-                        # blur image using local means with kernel sizes between 2 and 7
                         iaa.AverageBlur(k=(2, 5)),
-                        # blur image using local medians with kernel sizes between 2 and 7
                         iaa.MedianBlur(k=(3, 7)),
                     ]),
                     iaa.Sharpen(alpha=(0, 1.0),
                                 lightness=(0.75, 1.5)),  # sharpen images
-                    # add gaussian noise to images
                     iaa.AdditiveGaussianNoise(
                         loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
-                    # change brightness of images (by -10 to 10 of original value)
                     iaa.Add((-10, 10), per_channel=0.5),
                 ]),
-            # move pixels locally around (with random strengths)
             sometimes(iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)),
-            # sometimes move parts of the image around
             sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
-            sometimes(
-                iaa.PerspectiveTransform(scale=(0.02, 0.1), keep_size=False))
+            iaa.PerspectiveTransform(scale=(0.02, 0.1), keep_size=False)
         ],
         random_order=True)
 
@@ -254,56 +249,42 @@ def build_augment_sequence_for_background():
     """
     return iaa.Sequential(
         [
-            # crop images by -5% to 10% of their height/width
             sometimes(
                 iaa.CropAndPad(percent=(-0.05, 0.075),
                                pad_mode=ia.ALL,
                                pad_cval=(0, 255))),
             sometimes(
                 iaa.Affine(
-                    # scale images to 80-120% of their size, individually per axis
                     scale={
                         'x': (0.9, 1.1),
                         'y': (0.9, 1.1)
                     },
-                    # translate by -20 to +20 percent (per axis)
                     translate_percent={
                         'x': (-0.03, 0.03),
                         'y': (-0.03, 0.03)
                     },
                     rotate=(-5, 5),  # rotate by -45 to +45 degrees
-                    # use nearest neighbour or bilinear interpolation (fast)
                     order=[0, 1],
-                    # if mode is constant, use a cval between 0 and 255
                     cval=(0, 255),
-                    # use any of scikit-image's warping modes (see 2nd image from the top for examples)
                     mode=ia.ALL)),
-            # execute 0 to 5 of the following (less important) augmenters per image
-            # don't execute all of them, as that would often be way too strong
             iaa.SomeOf(
-                (0, 3),
+                (0, 2),
                 [
                     iaa.OneOf([
-                        # blur images with a sigma between 0 and 3.0
                         iaa.GaussianBlur((0, 3.0)),
-                        # blur image using local means with kernel sizes between 2 and 7
                         iaa.AverageBlur(k=(2, 7)),
-                        # blur image using local medians with kernel sizes between 2 and 7
                         iaa.MedianBlur(k=(3, 11)),
                     ]),
                     iaa.Sharpen(alpha=(0, 1.0),
                                 lightness=(0.75, 1.5)),  # sharpen images
-                    # add gaussian noise to images
                     iaa.AdditiveGaussianNoise(
                         loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
                     iaa.OneOf([
-                        # randomly remove up to 10% of the pixels
                         iaa.Dropout((0.01, 0.015), per_channel=0.1),
                         iaa.CoarseDropout((0.01, 0.015),
                                           size_percent=(0.01, 0.015),
                                           per_channel=0.1),
                     ]),
-                    # change brightness of images (by -10 to 10 of original value)
                     iaa.Add((-10, 10), per_channel=0.5),
                 ]),
             iaa.PerspectiveTransform(scale=(0.02, 0.05), keep_size=False)
