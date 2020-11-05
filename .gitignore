@@ -133,3 +133,4 @@ data/
 !data/**/.gitkeep
 *.png
 *.txt
+.vscode/

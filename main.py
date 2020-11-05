@@ -80,8 +80,8 @@ def generate(batch_idx, epoch_idx, out_dir, object_groups, dataset_background,
 
     # save result
     output_path_image = os.path.join(
-        out_dir, '{:03d}_{:05d}.png'.format(epoch_idx, batch_idx))
-    image_result_aug.save(fp=output_path_image, format="png")
+        out_dir, '{:03d}_{:05d}.jpg'.format(epoch_idx, batch_idx))
+    image_result_aug.save(fp=output_path_image, format="jpeg")
     # save annotation data
     output_path_anno = os.path.join(
         out_dir, '{:03d}_{:05d}.txt'.format(epoch_idx, batch_idx))
@@ -113,7 +113,7 @@ def main():
             list(
                 np.random.randint(low=0,
                                   high=len(dataset_object) - 1,
-                                  size=np.random.randint(2, 5, 1)))
+                                  size=np.random.randint(5, 7, 1)))
             for _ in range(setting.BATCH_SIZE)
         ]
         # func wrapper for multiprocessing

@@ -145,8 +145,16 @@ def get_group_object_positions(object_group, image_background, dataset_object):
 
     for w, h in obj_sizes:
         # set background image boundaries
-        min_x, min_y = 2 * w, 2 * h
-        max_x, max_y = bkg_w - 2 * w, bkg_h - 2 * h
+        if len(boxes) == 0 or not setting.OBJECT_IN_LINE:
+            min_x, min_y = 2 * w, 2 * h
+            max_x, max_y = bkg_w - 10 * w, bkg_h - 10 * h
+        else:
+            min_x = boxes[-1][2] + 1
+            min_y = boxes[-1][1] + 1
+            max_x = min(bkg_w - 2 * w,
+                        boxes[-1][2] + np.random.randint(2, 7, 1)[0])
+            max_y = min(bkg_h - 2 * h,
+                        boxes[-1][1] + np.random.randint(2, 7, 1)[0])
         # get new box coordinates for the obj on the bkg
         while True:
             new_box = get_box(w, h, min_x, min_y, max_x, max_y)
@@ -167,8 +175,7 @@ def resize_image(image):
     Resize image by random scale factor
     """
     resize_rate = np.random.choice(
-        setting.OBJECT_AUG_SCALE_FACTOR) + np.random.uniform(low=-0.1,
-                                                             high=0.1)
+        setting.OBJECT_AUG_SCALE_FACTOR) + np.random.uniform(low=-0.1, high=0.1)
     image = image.resize(
         [int(image.width * resize_rate),
          int(image.height * resize_rate)], Image.BILINEAR)
@@ -220,7 +227,7 @@ def build_augment_sequence_for_object():
                        cval=(0, 255),
                        mode=ia.ALL),
             iaa.SomeOf(
-                (0, 2),
+                (0, 1),
                 [
                     iaa.OneOf([
                         iaa.GaussianBlur((0, 1.0)),
