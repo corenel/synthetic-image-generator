@@ -1,6 +1,7 @@
 import os
 
 import imgaug as ia
+from imgaug.augmenters.meta import SomeOf
 import numpy as np
 from imgaug import augmenters as iaa
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
@@ -152,9 +153,9 @@ def get_group_object_positions(object_group, image_background, dataset_object):
             min_x = boxes[-1][2] + 1
             min_y = boxes[-1][1] + 1
             max_x = min(bkg_w - 2 * w,
-                        boxes[-1][2] + np.random.randint(2, 7, 1)[0])
+                        boxes[-1][2] + np.random.randint(2, 3, 1)[0])
             max_y = min(bkg_h - 2 * h,
-                        boxes[-1][1] + np.random.randint(2, 7, 1)[0])
+                        boxes[-1][1] + np.random.randint(2, 3, 1)[0])
         # get new box coordinates for the obj on the bkg
         while True:
             new_box = get_box(w, h, min_x, min_y, max_x, max_y)
@@ -216,8 +217,11 @@ def build_augment_sequence_for_object():
     :return: aug for object
     :rtype: iaa.Sequential
     """
-    return iaa.Sequential(
-        [
+    return iaa.Sequential([
+        sometimes(iaa.MultiplyAndAddToBrightness(mul=(0.5, 1.5),
+                                                 add=(-1, 1))),
+        sometimes(iaa.MultiplyHueAndSaturation((0.5, 1.5), per_channel=True)),
+        iaa.SomeOf((0, 2), [
             iaa.Affine(scale={
                 'x': (0.9, 1.1),
                 'y': (0.9, 1.1)
@@ -226,25 +230,12 @@ def build_augment_sequence_for_object():
                        order=[0, 1],
                        cval=(0, 255),
                        mode=ia.ALL),
-            iaa.SomeOf(
-                (0, 1),
-                [
-                    iaa.OneOf([
-                        iaa.GaussianBlur((0, 1.0)),
-                        iaa.AverageBlur(k=(2, 5)),
-                        iaa.MedianBlur(k=(3, 7)),
-                    ]),
-                    iaa.Sharpen(alpha=(0, 1.0),
-                                lightness=(0.75, 1.5)),  # sharpen images
-                    iaa.AdditiveGaussianNoise(
-                        loc=0, scale=(0.0, 0.01 * 255), per_channel=0.5),
-                    iaa.Add((-3, 3), per_channel=0.5),
-                ]),
-            sometimes(iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)),
-            sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))),
+            iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25),
+            iaa.PiecewiseAffine(scale=(0.01, 0.05)),
             iaa.PerspectiveTransform(scale=(0.02, 0.1), keep_size=False)
-        ],
-        random_order=True)
+        ]),
+    ],
+                          random_order=True)
 
 
 def build_augment_sequence_for_background():
