@@ -49,26 +49,19 @@ def generate(batch_idx, epoch_idx, out_dir, object_groups, dataset_background,
     # get sizes and positions
     object_group = object_groups[batch_idx]
     objs, labels, obj_sizes, boxes = util.get_group_object_positions(
-        object_group, image_background, dataset_object)
+        object_group, image_background, dataset_object, aug_object)
 
     # process each objext in the group
     for i, obj, label, size, box in zip(object_group, objs, labels, obj_sizes,
                                         boxes):
-        # resize the object
-        obj_w, obj_h = size
-        obj = obj.resize((obj_w, obj_h))
-        obj = util.resize_image(obj)
-        # augment this object
-        obj_aug = Image.fromarray(
-            aug_object.augment_images([np.array(obj)])[0])
         # generate annotation for this object
-        obj_w, obj_h = obj_aug.size
+        obj_w, obj_h = obj.size
         x_pos, y_pos = box[:2]
         x = int(x_pos + (0.5 * obj_w))
         y = int(y_pos + (0.5 * obj_h))
         bbox_list.append(util.xywh_to_bbox(label, x, y, obj_w, obj_h))
         # paste the obj to the background
-        image_result.paste(obj_aug, (x_pos, y_pos))
+        image_result.paste(obj, (x_pos, y_pos))
 
     # augment image and bboxes of image
     annotations = BoundingBoxesOnImage(bounding_boxes=bbox_list,
@@ -97,7 +90,9 @@ def main():
 
     # read input file lists
     dataset_background = dataset.BackgroundImageFolderDataset(opt.backgrounds)
+    print(dataset_background)
     dataset_object = dataset.ObjectImageFolderDataset(opt.objects)
+    print(dataset_object)
     # create output directory if not exists
     if not os.path.exists(opt.output):
         os.makedirs(opt.output, exist_ok=True)

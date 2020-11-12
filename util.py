@@ -116,7 +116,8 @@ def intersects(box, new_box):
     return not (box_x2 < x1 or box_x1 > x2 or box_y1 > y2 or box_y2 < y1)
 
 
-def get_group_object_positions(object_group, image_background, dataset_object):
+def get_group_object_positions(object_group, image_background, dataset_object,
+                               aug_object):
     """
     Generate positions for grouped object to paste on background image
 
@@ -126,6 +127,8 @@ def get_group_object_positions(object_group, image_background, dataset_object):
     :type image_background: numpy.array
     :param dataset_object: dataset of object images
     :type dataset_object: dataset.ObjectImageFolderDataset
+    :param aug_object: augment instance for object
+    :type aug_object: iaa.Sequential
     :return: size and bounding oxes of grouped objects
     """
     bkg_w, bkg_h = image_background.size
@@ -134,15 +137,25 @@ def get_group_object_positions(object_group, image_background, dataset_object):
     labels = []
     obj_sizes = []
     for i in object_group:
+        # load data
         obj, label = dataset_object[i]
-        objs.append(obj)
-        labels.append(label)
+        # TODO move transforms into dataset getting method
+        # resize obj
         factor = min([
             (setting.OBJECT_INIT_SCALE_FACTOR * image_background.size[dim]) /
             obj.size[dim] for dim in range(len(obj.size))
         ])
-        obj_sizes.append(
-            tuple(int(obj.size[dim] * factor) for dim in range(len(obj.size))))
+        obj_size = tuple(
+            int(obj.size[dim] * factor) for dim in range(len(obj.size)))
+        obj_w, obj_h = obj_size
+        obj = obj.resize((obj_w, obj_h))
+        obj = resize_image(obj)
+        # augment obj
+        obj_aug = Image.fromarray(aug_object.augment_images([np.array(obj)])[0])
+        # add to list
+        objs.append(obj_aug)
+        labels.append(label)
+        obj_sizes.append(obj_aug.size)
 
     for w, h in obj_sizes:
         # set background image boundaries
@@ -156,6 +169,9 @@ def get_group_object_positions(object_group, image_background, dataset_object):
                         boxes[-1][2] + np.random.randint(2, 3, 1)[0])
             max_y = min(bkg_h - 2 * h,
                         boxes[-1][1] + np.random.randint(2, 3, 1)[0])
+        if min_x >= max_x or min_y >= max_y:
+            print('Ignore invalid box: ', w, h, min_x, min_y, max_x, max_y)
+            continue
         # get new box coordinates for the obj on the bkg
         while True:
             new_box = get_box(w, h, min_x, min_y, max_x, max_y)
@@ -184,20 +200,6 @@ def resize_image(image):
     return image
 
 
-def get_label_id(filename):
-    """
-    Convert filename to label index
-
-    :param filename: input object filename
-    :type filename: str
-    :return: label index
-    :rtype: int
-    """
-    basename = os.path.basename(filename)
-    filename = os.path.splitext(basename)[0]
-    return setting.LABELS.index(filename)
-
-
 def sometimes(aug):
     """
     Return a shortcut for iaa.Sometimes
@@ -218,10 +220,17 @@ def build_augment_sequence_for_object():
     :rtype: iaa.Sequential
     """
     return iaa.Sequential([
-        sometimes(iaa.MultiplyAndAddToBrightness(mul=(0.5, 1.5),
-                                                 add=(-1, 1))),
+        sometimes(
+            iaa.CropAndPad(
+                percent=(-0.05, 0.075), pad_mode=ia.ALL, pad_cval=(0, 255))),
+        sometimes(iaa.MultiplyAndAddToBrightness(mul=(0.5, 1.5), add=(-1, 1))),
         sometimes(iaa.MultiplyHueAndSaturation((0.5, 1.5), per_channel=True)),
         iaa.SomeOf((0, 2), [
+            iaa.OneOf([
+                iaa.GaussianBlur((0, 1.0)),
+                iaa.AverageBlur(k=(1, 3)),
+                iaa.MedianBlur(k=(1, 3)),
+            ]),
             iaa.Affine(scale={
                 'x': (0.9, 1.1),
                 'y': (0.9, 1.1)
@@ -232,8 +241,12 @@ def build_augment_sequence_for_object():
                        mode=ia.ALL),
             iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25),
             iaa.PiecewiseAffine(scale=(0.01, 0.05)),
-            iaa.PerspectiveTransform(scale=(0.02, 0.1), keep_size=False)
         ]),
+        iaa.PerspectiveTransform(scale=(0.06, 0.1),
+                                 keep_size=False,
+                                 fit_output=True,
+                                 cval=(0, 255),
+                                 mode=ia.ALL),
     ],
                           random_order=True)
 
@@ -271,7 +284,7 @@ def build_augment_sequence_for_background():
                     iaa.OneOf([
                         iaa.GaussianBlur((0, 3.0)),
                         iaa.AverageBlur(k=(2, 7)),
-                        iaa.MedianBlur(k=(3, 11)),
+                        iaa.MedianBlur(k=(3, 7)),
                     ]),
                     iaa.Sharpen(alpha=(0, 1.0),
                                 lightness=(0.75, 1.5)),  # sharpen images
